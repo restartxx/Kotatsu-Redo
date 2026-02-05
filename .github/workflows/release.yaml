@@ -111,8 +111,9 @@ jobs:
           name: Kotatsu HomeLab ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
+          # [CORREÇÃO] O segredo está aqui: **/*.apk pega recursivamente qualquer apk gerado
           files: |
-            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/**/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
