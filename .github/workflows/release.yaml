@@ -78,28 +78,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout App code
-        uses: actions/checkout@v4
-
-      # --- INICIO DA INJEÇÃO DOS PARSERS ---
-      
+      # 1. Baixa seus parsers para a pasta 'kotatsu-parsers' (Nome genérico)
       - name: Checkout Custom Parsers
         uses: actions/checkout@v4
         with:
-          # ATENÇÃO: Substitua pelo seu usuário e repositório correto
-          repository: SEU_USUARIO/futon-parsers
-          path: futon-parsers
+          repository: restartxx/kotatsu-parsers-redo 
+          path: kotatsu-parsers # Nome da pasta local no runner
           ref: main 
 
+      # 2. Injeta o código no settings.gradle
       - name: Patch settings.gradle for Local Parsers
         run: |
           echo "Injetando Composite Build no settings.gradle..."
-          # Adiciona configuração para substituir a dependência remota pela pasta local
+          
+          # TRUQUE: Descobre qual é a dependência original no build.gradle
+          # Isso previne erro se o dev do fork mudar o nome do pacote (KotatsuApp vs Outro)
+          # O grep procura por "implementation 'com.github...." e pega o texto até os dois pontos da versão
+          
+          DEPENDENCY_STRING=$(grep -oP "implementation ['\"]com.github.[^:]+:[^:]+" app/build.gradle | head -n1 | sed "s/implementation ['\"]//")
+          
+          if [ -z "$DEPENDENCY_STRING" ]; then
+             # Fallback caso o grep falhe: usa o padrão original do Kotatsu
+             DEPENDENCY_STRING="com.github.KotatsuApp:kotatsu-parsers"
+             echo "Aviso: Não achei a string no build.gradle, usando fallback: $DEPENDENCY_STRING"
+          else
+             echo "Dependência detectada automaticamente: $DEPENDENCY_STRING"
+          fi
+
+          # Escreve a injeção usando a string detectada
           cat <<EOF >> settings.gradle
 
-          includeBuild('futon-parsers') {
+          includeBuild('kotatsu-parsers') {
               dependencySubstitution {
-                  substitute module('com.github.AppFuton:futon-parsers') using project(':')
+                  substitute module('$DEPENDENCY_STRING') using project(':')
               }
           }
           EOF
