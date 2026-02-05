@@ -26,28 +26,35 @@ jobs:
           path: kotatsu-parsers 
           ref: master
 
-      - name: Force Local Parsers Module (Perl Fix)
+      - name: Force Local Parsers Module (Catalog Fix)
         run: |
-          echo "🔥 Aplicando Linkagem Forçada (Modo Cirúrgico)..."
+          echo "🔥 Aplicando Linkagem Forçada e Corrigindo Catálogo..."
 
           # 1. Adiciona o módulo no settings.gradle
           echo "include ':kotatsu-parsers'" >> settings.gradle
 
-          # 2. SUBSTITUIÇÃO MULTI-LINHA (A CORREÇÃO)
-          # Usa Perl para achar o bloco exato (incluindo o exclude e as chaves) e trocar pelo project local.
-          # \s* pega qualquer espaço ou quebra de linha.
-          
+          # 2. SUBSTITUIÇÃO DA DEPENDÊNCIA (Manteve o Perl que funcionou)
           perl -0777 -i -pe 's|implementation\("com\.github\.clquwu:kotatsu-parsers-redo:\$parsersVersion"\)\s*\{\s*exclude group: \x27org\.json\x27, module: \x27json\x27\s*\}|implementation project(":kotatsu-parsers")|g' app/build.gradle
           
-          # 3. Limpeza do build.gradle do parser (opcional, previne erro de maven)
-          if [ -f "kotatsu-parsers/build.gradle" ]; then
-             sed -i "s|apply plugin: 'maven-publish'|//apply plugin: 'maven-publish'|g" kotatsu-parsers/build.gradle || true
-             sed -i "s|id 'maven-publish'|//id 'maven-publish'|g" kotatsu-parsers/build.gradle || true
+          # 3. CORREÇÃO DOS PLUGINS NO PARSER (O FIX DO ERRO ATUAL)
+          # Trocamos alias(libs.plugins...) por id(...) direto para não depender do version catalog
+          if [ -f "kotatsu-parsers/build.gradle.kts" ]; then
+             echo "Corrigindo build.gradle.kts do parser..."
+             sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' kotatsu-parsers/build.gradle.kts
+             sed -i 's|alias(libs.plugins.kotlin.serialization)|id("org.jetbrains.kotlin.plugin.serialization")|g' kotatsu-parsers/build.gradle.kts
+             # Removemos qualquer referência a 'libs' que possa quebrar as dependências
+             # Troca libs.json por "org.json:json:20230227" (versão comum usada no Android)
+             sed -i 's|libs.json|"org.json:json:20230227"|g' kotatsu-parsers/build.gradle.kts
+          fi
+
+          # 4. Desabilita publicação
+          if [ -f "kotatsu-parsers/build.gradle.kts" ]; then
+             sed -i 's|apply(plugin = "maven-publish")|//|g' kotatsu-parsers/build.gradle.kts || true
           fi
 
           echo "--- VERIFICAÇÃO ---"
-          echo "Verificando se o bloco antigo sumiu e o novo entrou:"
-          grep "kotatsu-parsers" app/build.gradle
+          grep "project" app/build.gradle
+          head -n 20 kotatsu-parsers/build.gradle.kts
 
       # --- FIM DA INJEÇÃO ---
 
@@ -87,9 +94,11 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # Aumentamos a memória do daemon para evitar erros em builds complexos
           ./gradlew assembleRelease \
             -PversionName=${{ steps.version.outputs.version }} \
             -PversionCode=${{ steps.version.outputs.version_code }} \
+            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
             -x lint
 
       - name: Create Release
