@@ -31,7 +31,7 @@ jobs:
           
           # 2. Baixa o arquivo RAW do seu repositório (ajuste o link se precisar)
           # Estou assumindo que o arquivo HomeLabParsers.kt está na raiz ou pasta conhecida do seu repo
-          wget https://raw.githubusercontent.com/restartxx/kotatsu-parsers-redo/master/kotatsu-parsers/src/main/kotlin/org/koitharu/kotatsu/parsers/site/all/HomeLabParsers.kt -O temp_parser.kt
+          wget https://raw.githubusercontent.com/restartxx/kotatsu-parsers-redo/refs/heads/master/src/main/kotlin/org/koitharu/kotatsu/parsers/site/all/HomeLabParsers.kt -O temp_parser.kt
           
           # 3. CORREÇÃO DE PACOTE (Cirurgia no texto)
           # Mudamos o 'package' do arquivo para bater com a pasta onde vamos colocar
