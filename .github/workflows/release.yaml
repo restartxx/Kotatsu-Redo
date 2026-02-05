@@ -26,14 +26,11 @@ jobs:
           path: kotatsu-parsers 
           ref: master
 
-      - name: Force Local Parsers Module (Multi-Module Support)
+      - name: Force Local Parsers Module (KSP Fix)
         run: |
-          echo "🔥 Aplicando Linkagem Forçada com Suporte a KSP..."
+          echo "🔥 Aplicando Linkagem Forçada com Correção de Variáveis KSP..."
 
-          # 1. CONFIGURAÇÃO DO SETTINGS.GRADLE (A Correção do Erro Atual)
-          # Ensinamos o Gradle que existe o módulo principal E o submódulo ksp
-          # e dizemos exatamente em qual pasta eles estão.
-          
+          # 1. CONFIGURAÇÃO DO SETTINGS.GRADLE
           cat <<EOF >> settings.gradle
 
           include ':kotatsu-parsers'
@@ -41,14 +38,14 @@ jobs:
           project(':kotatsu-parsers-ksp').projectDir = new File('kotatsu-parsers/kotatsu-parsers-ksp')
           EOF
 
-          # 2. LINKAGEM NO APP/BUILD.GRADLE (Mantido)
+          # 2. LINKAGEM NO APP/BUILD.GRADLE
           perl -0777 -i -pe 's|implementation\("com\.github\.clquwu:kotatsu-parsers-redo:\$parsersVersion"\)\s*\{\s*exclude group: \x27org\.json\x27, module: \x27json\x27\s*\}|implementation project(":kotatsu-parsers")|g' app/build.gradle
           
           # ==================================================================================
-          # 3. LIMPEZA DOS ARQUIVOS DE BUILD DO PARSER (Removendo libs.* quebradas)
+          # 3. LIMPEZA DOS ARQUIVOS DE BUILD DO PARSER
           # ==================================================================================
           
-          # --- ARQUIVO PRINCIPAL ---
+          # --- ARQUIVO PRINCIPAL (kotatsu-parsers/build.gradle.kts) ---
           PARSER_BUILD="kotatsu-parsers/build.gradle.kts"
           if [ -f "$PARSER_BUILD" ]; then
              echo "Limpando $PARSER_BUILD..."
@@ -72,22 +69,29 @@ jobs:
              sed -i 's|apply(plugin = "maven-publish")|//|g' $PARSER_BUILD
           fi
 
-          # --- ARQUIVO DO SUBMÓDULO KSP (Prevenção pro próximo erro) ---
+          # --- ARQUIVO DO SUBMÓDULO KSP (kotatsu-parsers-ksp/build.gradle.kts) ---
           KSP_BUILD="kotatsu-parsers/kotatsu-parsers-ksp/build.gradle.kts"
           if [ -f "$KSP_BUILD" ]; then
              echo "Limpando $KSP_BUILD..."
              # Plugins
              sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' $KSP_BUILD
              
-             # Dependências do KSP (Substitui referências libs.* por strings genéricas)
-             # KSP API
-             sed -i 's|libs.ksp.api|"com.google.devtools.ksp:symbol-processing-api:1.9.20-1.0.14"|g' $KSP_BUILD
-             # Kotlin Poet
-             sed -i 's|libs.kotlinpoet|"com.squareup:kotlinpoet:1.14.2"|g' $KSP_BUILD
+             # --- AQUI ESTAVA O ERRO ---
+             # Substituímos especificamente a variável longa que apareceu no seu log
+             sed -i 's|libs.ksp.symbol.processing.api|"com.google.devtools.ksp:symbol-processing-api:1.9.20-1.0.14"|g' $KSP_BUILD
+             
+             # Prevenção para KotlinPoet (muito comum aparecer junto)
              sed -i 's|libs.kotlinpoet.ksp|"com.squareup:kotlinpoet-ksp:1.14.2"|g' $KSP_BUILD
+             sed -i 's|libs.kotlinpoet|"com.squareup:kotlinpoet:1.14.2"|g' $KSP_BUILD
+             
+             # Fallback: Se tiver qualquer outro libs.ksp.* que passou batido, tenta substituir (brute force)
+             sed -i 's|libs.ksp.api|"com.google.devtools.ksp:symbol-processing-api:1.9.20-1.0.14"|g' $KSP_BUILD
              
              # Remove publicação e testes
              sed -i 's|apply(plugin = "maven-publish")|//|g' $KSP_BUILD
+             
+             echo "Conteúdo final do KSP Build (Debug):"
+             cat $KSP_BUILD
           fi
 
           echo "--- VERIFICAÇÃO SETTINGS ---"
