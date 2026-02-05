@@ -25,7 +25,7 @@ jobs:
           # CONFIRA SE O REPO ESTÁ CERTO
           repository: restartxx/kotatsu-parsers-redo 
           path: kotatsu-parsers 
-          ref: main 
+          ref: devel 
 
       - name: Patch settings.gradle for Local Parsers
         run: |
