@@ -17,7 +17,7 @@ jobs:
       - name: Checkout App code
         uses: actions/checkout@v4
 
-      # --- INICIO DA ALTERAÇÃO ---
+      # --- INICIO DA INJEÇÃO DOS PARSERS ---
       
       - name: Checkout Custom Parsers
         uses: actions/checkout@v4
@@ -26,20 +26,18 @@ jobs:
           path: kotatsu-parsers 
           ref: master
 
-      - name: Force Local Parsers Module (Safe Mode)
+      - name: Force Local Parsers Module (Perl Fix)
         run: |
-          echo "🔥 Aplicando Linkagem Forçada (Modo Seguro)..."
+          echo "🔥 Aplicando Linkagem Forçada (Modo Cirúrgico)..."
 
           # 1. Adiciona o módulo no settings.gradle
           echo "include ':kotatsu-parsers'" >> settings.gradle
 
-          # 2. A MÁGICA SEGURA:
-          # Em vez de substituir, usamos o sed para:
-          # - Encontrar qualquer linha com 'kotatsu-parsers'
-          # - Substituir por: // (Linha Original) \n implementation project(':kotatsu-parsers')
-          # O '&' no comando representa a linha original que foi encontrada
+          # 2. SUBSTITUIÇÃO MULTI-LINHA (A CORREÇÃO)
+          # Usa Perl para achar o bloco exato (incluindo o exclude e as chaves) e trocar pelo project local.
+          # \s* pega qualquer espaço ou quebra de linha.
           
-          sed -i 's|.*kotatsu-parsers.*|// & \n    implementation project(":kotatsu-parsers")|' app/build.gradle
+          perl -0777 -i -pe 's|implementation\("com\.github\.clquwu:kotatsu-parsers-redo:\$parsersVersion"\)\s*\{\s*exclude group: \x27org\.json\x27, module: \x27json\x27\s*\}|implementation project(":kotatsu-parsers")|g' app/build.gradle
           
           # 3. Limpeza do build.gradle do parser (opcional, previne erro de maven)
           if [ -f "kotatsu-parsers/build.gradle" ]; then
@@ -48,10 +46,10 @@ jobs:
           fi
 
           echo "--- VERIFICAÇÃO ---"
-          echo "Procurando 'kotatsu-parsers' no app/build.gradle:"
-          grep -C 2 "kotatsu-parsers" app/build.gradle
+          echo "Verificando se o bloco antigo sumiu e o novo entrou:"
+          grep "kotatsu-parsers" app/build.gradle
 
-      # --- FIM DA ALTERAÇÃO ---
+      # --- FIM DA INJEÇÃO ---
 
       - name: Setup Java
         uses: actions/setup-java@v4
