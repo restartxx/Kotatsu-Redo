@@ -26,66 +26,72 @@ jobs:
           path: kotatsu-parsers 
           ref: master
 
-      - name: Force Local Parsers Module (Hardcore Rewrite)
+      - name: Force Local Parsers Module (Multi-Module Support)
         run: |
-          echo "🔥 Aplicando Reescrita Total do Módulo de Parsers..."
+          echo "🔥 Aplicando Linkagem Forçada com Suporte a KSP..."
 
-          # 1. Configura settings.gradle do App
-          echo "include ':kotatsu-parsers'" >> settings.gradle
+          # 1. CONFIGURAÇÃO DO SETTINGS.GRADLE (A Correção do Erro Atual)
+          # Ensinamos o Gradle que existe o módulo principal E o submódulo ksp
+          # e dizemos exatamente em qual pasta eles estão.
+          
+          cat <<EOF >> settings.gradle
 
-          # 2. Linkagem no app/build.gradle (Perl method)
+          include ':kotatsu-parsers'
+          include ':kotatsu-parsers-ksp'
+          project(':kotatsu-parsers-ksp').projectDir = new File('kotatsu-parsers/kotatsu-parsers-ksp')
+          EOF
+
+          # 2. LINKAGEM NO APP/BUILD.GRADLE (Mantido)
           perl -0777 -i -pe 's|implementation\("com\.github\.clquwu:kotatsu-parsers-redo:\$parsersVersion"\)\s*\{\s*exclude group: \x27org\.json\x27, module: \x27json\x27\s*\}|implementation project(":kotatsu-parsers")|g' app/build.gradle
           
           # ==================================================================================
-          # 3. A GRANDE REESCRITA DO BUILD.GRADLE.KTS DO PARSER
-          # O objetivo é remover TODAS as referências a 'libs.*' e 'tasks.*' que quebram
+          # 3. LIMPEZA DOS ARQUIVOS DE BUILD DO PARSER (Removendo libs.* quebradas)
           # ==================================================================================
           
+          # --- ARQUIVO PRINCIPAL ---
           PARSER_BUILD="kotatsu-parsers/build.gradle.kts"
-          
           if [ -f "$PARSER_BUILD" ]; then
-             echo "Reescrevendo $PARSER_BUILD..."
-
-             # A. Remove imports problemáticos (Tasks de relatório)
+             echo "Limpando $PARSER_BUILD..."
              sed -i '/import tasks.ReportGenerateTask/d' $PARSER_BUILD
-             
-             # B. Remove o registro da task de relatório no final do arquivo
              sed -i '/tasks.register<ReportGenerateTask>/d' $PARSER_BUILD
-
-             # C. Substitui Plugins (libs.plugins -> id direto)
+             
+             # Plugins
              sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' $PARSER_BUILD
              sed -i 's|alias(libs.plugins.kotlin.serialization)|id("org.jetbrains.kotlin.plugin.serialization")|g' $PARSER_BUILD
+             sed -i 's|alias(libs.plugins.ksp)|id("com.google.devtools.ksp")|g' $PARSER_BUILD
              
-             # D. Substitui Dependências (libs.x -> string direta)
-             # Essas versões são as padrão usadas no ecossistema Kotatsu/Android atual
-             
-             # Kotlin Coroutines
+             # Dependências
              sed -i 's|libs.kotlinx.coroutines.core|"org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"|g' $PARSER_BUILD
-             
-             # Jsoup
              sed -i 's|libs.jsoup|"org.jsoup:jsoup:1.16.1"|g' $PARSER_BUILD
-             
-             # QuickJS
              sed -i 's|libs.quickjs|"app.cash.quickjs:quickjs-jvm:0.9.2"|g' $PARSER_BUILD
-             
-             # JSON
              sed -i 's|libs.json|"org.json:json:20231013"|g' $PARSER_BUILD
-
-             # Testes (JUnit) - Vamos comentar os testes para não perder tempo baixando libs de teste
-             sed -i 's|testImplementation(libs.junit.api)|//testImplementation|g' $PARSER_BUILD
-             sed -i 's|testImplementation(libs.junit.engine)|//testImplementation|g' $PARSER_BUILD
-             sed -i 's|testImplementation(libs.junit.params)|//testImplementation|g' $PARSER_BUILD
-             sed -i 's|testRuntimeOnly(libs.junit.launcher)|//testRuntimeOnly|g' $PARSER_BUILD
              
-             # Desativa publicação Maven
+             # Remove testes e publicação
+             sed -i 's|testImplementation|//testImplementation|g' $PARSER_BUILD
+             sed -i 's|testRuntimeOnly|//testRuntimeOnly|g' $PARSER_BUILD
              sed -i 's|apply(plugin = "maven-publish")|//|g' $PARSER_BUILD
-             
-             echo "--- ARQUIVO REESCRITO (PREVIEW) ---"
-             head -n 30 $PARSER_BUILD
           fi
 
-          echo "--- VERIFICAÇÃO APP ---"
-          grep "project" app/build.gradle
+          # --- ARQUIVO DO SUBMÓDULO KSP (Prevenção pro próximo erro) ---
+          KSP_BUILD="kotatsu-parsers/kotatsu-parsers-ksp/build.gradle.kts"
+          if [ -f "$KSP_BUILD" ]; then
+             echo "Limpando $KSP_BUILD..."
+             # Plugins
+             sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' $KSP_BUILD
+             
+             # Dependências do KSP (Substitui referências libs.* por strings genéricas)
+             # KSP API
+             sed -i 's|libs.ksp.api|"com.google.devtools.ksp:symbol-processing-api:1.9.20-1.0.14"|g' $KSP_BUILD
+             # Kotlin Poet
+             sed -i 's|libs.kotlinpoet|"com.squareup:kotlinpoet:1.14.2"|g' $KSP_BUILD
+             sed -i 's|libs.kotlinpoet.ksp|"com.squareup:kotlinpoet-ksp:1.14.2"|g' $KSP_BUILD
+             
+             # Remove publicação e testes
+             sed -i 's|apply(plugin = "maven-publish")|//|g' $KSP_BUILD
+          fi
+
+          echo "--- VERIFICAÇÃO SETTINGS ---"
+          tail -n 5 settings.gradle
 
       # --- FIM DA INJEÇÃO ---
 
