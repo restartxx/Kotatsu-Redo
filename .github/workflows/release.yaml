@@ -17,48 +17,39 @@ jobs:
       - name: Checkout App code
         uses: actions/checkout@v4
 
-      # --- INICIO DA INJEÇÃO DOS PARSERS ---
+      # --- INICIO DA ALTERAÇÃO CRÍTICA ---
       
       - name: Checkout Custom Parsers
         uses: actions/checkout@v4
         with:
-          # CONFIRA SE O REPO ESTÁ CERTO
           repository: restartxx/kotatsu-parsers-redo 
           path: kotatsu-parsers 
           ref: master
 
-      - name: Patch settings.gradle for Local Parsers
+      - name: Force Local Parsers Module (Nuclear Option)
         run: |
-          echo "Injetando Composite Build no settings.gradle..."
+          echo "🔥 Aplicando Linkagem Forçada do Módulo..."
+
+          # 1. Adiciona o módulo no settings.gradle
+          # Isso diz pro Gradle: "A pasta kotatsu-parsers é parte deste projeto agora"
+          echo "include ':kotatsu-parsers'" >> settings.gradle
+
+          # 2. Substitui a linha de dependência no app/build.gradle
+          # Procura qualquer linha com 'implementation' e 'kotatsu-parsers' (que baixaria da web)
+          # E troca por: implementation project(':kotatsu-parsers') (que usa a pasta local)
+          sed -i "s|implementation.*kotatsu-parsers.*|implementation project(':kotatsu-parsers')|g" app/build.gradle
           
-          # Tenta descobrir o nome da dependência automaticamente
-          DEPENDENCY_STRING=$(grep -oP "implementation ['\"]com.github.[^:]+:[^:]+" app/build.gradle | head -n1 | sed "s/implementation ['\"]//") || true
-          
-          if [ -z "$DEPENDENCY_STRING" ]; then
-             # Se falhar (ex: app usa kts), usa o padrão do Redo/Kotatsu
-             DEPENDENCY_STRING="com.github.KotatsuApp:kotatsu-parsers"
-             echo "Aviso: Não achei a string no build.gradle (provavelmente é .kts), usando fallback: $DEPENDENCY_STRING"
-          else
-             echo "Dependência detectada: $DEPENDENCY_STRING"
+          # 3. Remove plugins de publicação do parser (se existirem) para evitar erro de credenciais
+          if [ -f "kotatsu-parsers/build.gradle" ]; then
+             sed -i "s|apply plugin: 'maven-publish'|//apply plugin: 'maven-publish'|g" kotatsu-parsers/build.gradle || true
+             sed -i "s|id 'maven-publish'|//id 'maven-publish'|g" kotatsu-parsers/build.gradle || true
           fi
 
-          # Se o arquivo for .kts (Kotlin), o comando de append é diferente, 
-          # mas como o Redo ainda usa uma mistura, vamos garantir criando/appendando no settings.gradle (Groovy) 
-          # que o Gradle lê com prioridade ou em conjunto.
-          
-          cat <<EOF >> settings.gradle
+          echo "--- VERIFICAÇÃO ---"
+          echo "Dependência no app/build.gradle deve mostrar 'project(...)':"
+          grep "kotatsu-parsers" app/build.gradle
 
-          includeBuild('kotatsu-parsers') {
-              dependencySubstitution {
-                  substitute module('$DEPENDENCY_STRING') using project(':')
-              }
-          }
-          EOF
-          
-          echo "Verificando final do arquivo settings.gradle:"
-          tail -n 10 settings.gradle
-
-      # --- FIM DA INJEÇÃO ---
+      # --- FIM DA ALTERAÇÃO CRÍTICA ---
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -73,7 +64,6 @@ jobs:
         id: version
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            # Se for manual sem tag, cria uma versão fake
             echo "version=1.0.0-dev" >> $GITHUB_OUTPUT
             echo "version_code=10000" >> $GITHUB_OUTPUT
           else
@@ -111,7 +101,6 @@ jobs:
           name: Kotatsu HomeLab ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
-          # [CORREÇÃO] O segredo está aqui: **/*.apk pega recursivamente qualquer apk gerado
           files: |
             app/build/outputs/apk/**/*.apk
         env:
