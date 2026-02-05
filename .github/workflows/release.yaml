@@ -26,35 +26,66 @@ jobs:
           path: kotatsu-parsers 
           ref: master
 
-      - name: Force Local Parsers Module (Catalog Fix)
+      - name: Force Local Parsers Module (Hardcore Rewrite)
         run: |
-          echo "🔥 Aplicando Linkagem Forçada e Corrigindo Catálogo..."
+          echo "🔥 Aplicando Reescrita Total do Módulo de Parsers..."
 
-          # 1. Adiciona o módulo no settings.gradle
+          # 1. Configura settings.gradle do App
           echo "include ':kotatsu-parsers'" >> settings.gradle
 
-          # 2. SUBSTITUIÇÃO DA DEPENDÊNCIA (Manteve o Perl que funcionou)
+          # 2. Linkagem no app/build.gradle (Perl method)
           perl -0777 -i -pe 's|implementation\("com\.github\.clquwu:kotatsu-parsers-redo:\$parsersVersion"\)\s*\{\s*exclude group: \x27org\.json\x27, module: \x27json\x27\s*\}|implementation project(":kotatsu-parsers")|g' app/build.gradle
           
-          # 3. CORREÇÃO DOS PLUGINS NO PARSER (O FIX DO ERRO ATUAL)
-          # Trocamos alias(libs.plugins...) por id(...) direto para não depender do version catalog
-          if [ -f "kotatsu-parsers/build.gradle.kts" ]; then
-             echo "Corrigindo build.gradle.kts do parser..."
-             sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' kotatsu-parsers/build.gradle.kts
-             sed -i 's|alias(libs.plugins.kotlin.serialization)|id("org.jetbrains.kotlin.plugin.serialization")|g' kotatsu-parsers/build.gradle.kts
-             # Removemos qualquer referência a 'libs' que possa quebrar as dependências
-             # Troca libs.json por "org.json:json:20230227" (versão comum usada no Android)
-             sed -i 's|libs.json|"org.json:json:20230227"|g' kotatsu-parsers/build.gradle.kts
+          # ==================================================================================
+          # 3. A GRANDE REESCRITA DO BUILD.GRADLE.KTS DO PARSER
+          # O objetivo é remover TODAS as referências a 'libs.*' e 'tasks.*' que quebram
+          # ==================================================================================
+          
+          PARSER_BUILD="kotatsu-parsers/build.gradle.kts"
+          
+          if [ -f "$PARSER_BUILD" ]; then
+             echo "Reescrevendo $PARSER_BUILD..."
+
+             # A. Remove imports problemáticos (Tasks de relatório)
+             sed -i '/import tasks.ReportGenerateTask/d' $PARSER_BUILD
+             
+             # B. Remove o registro da task de relatório no final do arquivo
+             sed -i '/tasks.register<ReportGenerateTask>/d' $PARSER_BUILD
+
+             # C. Substitui Plugins (libs.plugins -> id direto)
+             sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' $PARSER_BUILD
+             sed -i 's|alias(libs.plugins.kotlin.serialization)|id("org.jetbrains.kotlin.plugin.serialization")|g' $PARSER_BUILD
+             
+             # D. Substitui Dependências (libs.x -> string direta)
+             # Essas versões são as padrão usadas no ecossistema Kotatsu/Android atual
+             
+             # Kotlin Coroutines
+             sed -i 's|libs.kotlinx.coroutines.core|"org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"|g' $PARSER_BUILD
+             
+             # Jsoup
+             sed -i 's|libs.jsoup|"org.jsoup:jsoup:1.16.1"|g' $PARSER_BUILD
+             
+             # QuickJS
+             sed -i 's|libs.quickjs|"app.cash.quickjs:quickjs-jvm:0.9.2"|g' $PARSER_BUILD
+             
+             # JSON
+             sed -i 's|libs.json|"org.json:json:20231013"|g' $PARSER_BUILD
+
+             # Testes (JUnit) - Vamos comentar os testes para não perder tempo baixando libs de teste
+             sed -i 's|testImplementation(libs.junit.api)|//testImplementation|g' $PARSER_BUILD
+             sed -i 's|testImplementation(libs.junit.engine)|//testImplementation|g' $PARSER_BUILD
+             sed -i 's|testImplementation(libs.junit.params)|//testImplementation|g' $PARSER_BUILD
+             sed -i 's|testRuntimeOnly(libs.junit.launcher)|//testRuntimeOnly|g' $PARSER_BUILD
+             
+             # Desativa publicação Maven
+             sed -i 's|apply(plugin = "maven-publish")|//|g' $PARSER_BUILD
+             
+             echo "--- ARQUIVO REESCRITO (PREVIEW) ---"
+             head -n 30 $PARSER_BUILD
           fi
 
-          # 4. Desabilita publicação
-          if [ -f "kotatsu-parsers/build.gradle.kts" ]; then
-             sed -i 's|apply(plugin = "maven-publish")|//|g' kotatsu-parsers/build.gradle.kts || true
-          fi
-
-          echo "--- VERIFICAÇÃO ---"
+          echo "--- VERIFICAÇÃO APP ---"
           grep "project" app/build.gradle
-          head -n 20 kotatsu-parsers/build.gradle.kts
 
       # --- FIM DA INJEÇÃO ---
 
@@ -94,7 +125,6 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # Aumentamos a memória do daemon para evitar erros em builds complexos
           ./gradlew assembleRelease \
             -PversionName=${{ steps.version.outputs.version }} \
             -PversionCode=${{ steps.version.outputs.version_code }} \
