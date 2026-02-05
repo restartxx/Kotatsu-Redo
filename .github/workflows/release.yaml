@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: # Permite rodar manualmente sem tag se precisar testar
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout App code
         uses: actions/checkout@v4
 
-      # --- INICIO DA ALTERAÇÃO CRÍTICA ---
+      # --- INICIO DA ALTERAÇÃO ---
       
       - name: Checkout Custom Parsers
         uses: actions/checkout@v4
@@ -26,30 +26,32 @@ jobs:
           path: kotatsu-parsers 
           ref: master
 
-      - name: Force Local Parsers Module (Nuclear Option)
+      - name: Force Local Parsers Module (Safe Mode)
         run: |
-          echo "🔥 Aplicando Linkagem Forçada do Módulo..."
+          echo "🔥 Aplicando Linkagem Forçada (Modo Seguro)..."
 
           # 1. Adiciona o módulo no settings.gradle
-          # Isso diz pro Gradle: "A pasta kotatsu-parsers é parte deste projeto agora"
           echo "include ':kotatsu-parsers'" >> settings.gradle
 
-          # 2. Substitui a linha de dependência no app/build.gradle
-          # Procura qualquer linha com 'implementation' e 'kotatsu-parsers' (que baixaria da web)
-          # E troca por: implementation project(':kotatsu-parsers') (que usa a pasta local)
-          sed -i "s|implementation.*kotatsu-parsers.*|implementation project(':kotatsu-parsers')|g" app/build.gradle
+          # 2. A MÁGICA SEGURA:
+          # Em vez de substituir, usamos o sed para:
+          # - Encontrar qualquer linha com 'kotatsu-parsers'
+          # - Substituir por: // (Linha Original) \n implementation project(':kotatsu-parsers')
+          # O '&' no comando representa a linha original que foi encontrada
           
-          # 3. Remove plugins de publicação do parser (se existirem) para evitar erro de credenciais
+          sed -i 's|.*kotatsu-parsers.*|// & \n    implementation project(":kotatsu-parsers")|' app/build.gradle
+          
+          # 3. Limpeza do build.gradle do parser (opcional, previne erro de maven)
           if [ -f "kotatsu-parsers/build.gradle" ]; then
              sed -i "s|apply plugin: 'maven-publish'|//apply plugin: 'maven-publish'|g" kotatsu-parsers/build.gradle || true
              sed -i "s|id 'maven-publish'|//id 'maven-publish'|g" kotatsu-parsers/build.gradle || true
           fi
 
           echo "--- VERIFICAÇÃO ---"
-          echo "Dependência no app/build.gradle deve mostrar 'project(...)':"
-          grep "kotatsu-parsers" app/build.gradle
+          echo "Procurando 'kotatsu-parsers' no app/build.gradle:"
+          grep -C 2 "kotatsu-parsers" app/build.gradle
 
-      # --- FIM DA ALTERAÇÃO CRÍTICA ---
+      # --- FIM DA ALTERAÇÃO ---
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -87,7 +89,6 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          # O flag -x lint ignora erros de formatação pra não falhar o build a toa
           ./gradlew assembleRelease \
             -PversionName=${{ steps.version.outputs.version }} \
             -PversionCode=${{ steps.version.outputs.version_code }} \
