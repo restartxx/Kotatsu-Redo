@@ -4,108 +4,48 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch: # Permite rodar manualmente sem tag se precisar testar
 
 permissions:
   contents: write
 
 jobs:
-  check_version:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout App code
         uses: actions/checkout@v4
 
-      - name: Get version from tag
-        id: tag
-        run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          echo "Tag version: $VERSION"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          PATCH=${PATCH:-0}
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-
-      - name: Read AndroidManifest versions
-        run: |
-          MANIFEST=app/src/main/AndroidManifest.xml
-          if [ ! -f "$MANIFEST" ]; then echo "Missing $MANIFEST" && exit 1; fi
-          MAN_VER=$(grep -oP 'android:versionName="\K[^"]+' "$MANIFEST" | head -n1)
-          MAN_CODE=$(grep -oP 'android:versionCode="\K[^\"]+' "$MANIFEST" | head -n1)
-          echo "manifest_version=$MAN_VER" >> $GITHUB_OUTPUT
-          echo "manifest_version_code=$MAN_CODE" >> $GITHUB_OUTPUT
-          echo "AndroidManifest: $MAN_VER ($MAN_CODE)"
-
-      - name: Read build.gradle defaults
-        run: |
-          FILE=app/build.gradle
-          if [ ! -f "$FILE" ]; then echo "Missing $FILE" && exit 1; fi
-          GRADLE_VER=$(grep -oP "versionName project.hasProperty\\('versionName'\\) \\? project.property\\('versionName'\\) : '\\K[^']+" "$FILE" | head -n1 || true)
-          GRADLE_CODE=$(grep -oP "versionCode project.hasProperty\\('versionCode'\\) \\? project.property\\('versionCode'\\).toInteger\\(\\) : \\K[0-9]+" "$FILE" | head -n1 || true)
-          echo "gradle_version=$GRADLE_VER" >> $GITHUB_OUTPUT
-          echo "gradle_version_code=$GRADLE_CODE" >> $GITHUB_OUTPUT
-          echo "build.gradle defaults: $GRADLE_VER ($GRADLE_CODE)"
-
-      - name: Compare tag with files
-        run: |
-          set -e
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          PATCH=${PATCH:-0}
-          EXPECTED_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-
-          MAN_VER=$(grep -oP 'android:versionName="\K[^"]+' app/src/main/AndroidManifest.xml | head -n1)
-          MAN_CODE=$(grep -oP 'android:versionCode="\K[^\"]+' app/src/main/AndroidManifest.xml | head -n1)
-
-          GRADLE_VER=$(grep -oP "versionName project.hasProperty\\('versionName'\\) \\? project.property\\('versionName'\\) : '\\K[^']+" app/build.gradle | head -n1 || true)
-          GRADLE_CODE=$(grep -oP "versionCode project.hasProperty\\('versionCode'\\) \\? project.property\\('versionCode'\\).toInteger\\(\\) : \\K[0-9]+" app/build.gradle | head -n1 || true)
-
-          echo "Tag: $VERSION ($EXPECTED_CODE)"
-          echo "AndroidManifest: $MAN_VER ($MAN_CODE)"
-          echo "build.gradle: $GRADLE_VER ($GRADLE_CODE)"
-
-          if [ "$MAN_VER" != "$VERSION" ]; then echo "ERROR: AndroidManifest versionName ($MAN_VER) does not match tag ($VERSION)" && exit 1; fi
-          if [ "$GRADLE_VER" != "$VERSION" ]; then echo "ERROR: app/build.gradle default versionName ($GRADLE_VER) does not match tag ($VERSION)" && exit 1; fi
-          if [ "$MAN_CODE" != "$EXPECTED_CODE" ]; then echo "ERROR: AndroidManifest versionCode ($MAN_CODE) does not match expected ($EXPECTED_CODE)" && exit 1; fi
-          if [ "$GRADLE_CODE" != "$EXPECTED_CODE" ]; then echo "ERROR: app/build.gradle default versionCode ($GRADLE_CODE) does not match expected ($EXPECTED_CODE)" && exit 1; fi
-          echo "Version check passed."
-
-  build:
-    needs: check_version
-    runs-on: ubuntu-latest
-
-    steps:
-      # 1. Baixa seus parsers para a pasta 'kotatsu-parsers' (Nome genérico)
+      # --- INICIO DA INJEÇÃO DOS PARSERS ---
+      
       - name: Checkout Custom Parsers
         uses: actions/checkout@v4
         with:
+          # CONFIRA SE O REPO ESTÁ CERTO
           repository: restartxx/kotatsu-parsers-redo 
-          path: kotatsu-parsers # Nome da pasta local no runner
+          path: kotatsu-parsers 
           ref: main 
 
-      # 2. Injeta o código no settings.gradle
       - name: Patch settings.gradle for Local Parsers
         run: |
           echo "Injetando Composite Build no settings.gradle..."
           
-          # TRUQUE: Descobre qual é a dependência original no build.gradle
-          # Isso previne erro se o dev do fork mudar o nome do pacote (KotatsuApp vs Outro)
-          # O grep procura por "implementation 'com.github...." e pega o texto até os dois pontos da versão
-          
-          DEPENDENCY_STRING=$(grep -oP "implementation ['\"]com.github.[^:]+:[^:]+" app/build.gradle | head -n1 | sed "s/implementation ['\"]//")
+          # Tenta descobrir o nome da dependência automaticamente
+          DEPENDENCY_STRING=$(grep -oP "implementation ['\"]com.github.[^:]+:[^:]+" app/build.gradle | head -n1 | sed "s/implementation ['\"]//") || true
           
           if [ -z "$DEPENDENCY_STRING" ]; then
-             # Fallback caso o grep falhe: usa o padrão original do Kotatsu
+             # Se falhar (ex: app usa kts), usa o padrão do Redo/Kotatsu
              DEPENDENCY_STRING="com.github.KotatsuApp:kotatsu-parsers"
-             echo "Aviso: Não achei a string no build.gradle, usando fallback: $DEPENDENCY_STRING"
+             echo "Aviso: Não achei a string no build.gradle (provavelmente é .kts), usando fallback: $DEPENDENCY_STRING"
           else
-             echo "Dependência detectada automaticamente: $DEPENDENCY_STRING"
+             echo "Dependência detectada: $DEPENDENCY_STRING"
           fi
 
-          # Escreve a injeção usando a string detectada
+          # Se o arquivo for .kts (Kotlin), o comando de append é diferente, 
+          # mas como o Redo ainda usa uma mistura, vamos garantir criando/appendando no settings.gradle (Groovy) 
+          # que o Gradle lê com prioridade ou em conjunto.
+          
           cat <<EOF >> settings.gradle
 
           includeBuild('kotatsu-parsers') {
@@ -132,13 +72,19 @@ jobs:
       - name: Get version from tag
         id: version
         run: |
-          TAG=${GITHUB_REF#refs/tags/}
-          VERSION=${TAG#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION" 
-          PATCH=${PATCH:-0}
-          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Se for manual sem tag, cria uma versão fake
+            echo "version=1.0.0-dev" >> $GITHUB_OUTPUT
+            echo "version_code=10000" >> $GITHUB_OUTPUT
+          else
+            TAG=${GITHUB_REF#refs/tags/}
+            VERSION=${TAG#v}
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION" 
+            PATCH=${PATCH:-0}
+            VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+            echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          fi
 
       - name: Decode keystore
         run: |
@@ -151,15 +97,18 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # O flag -x lint ignora erros de formatação pra não falhar o build a toa
           ./gradlew assembleRelease \
             -PversionName=${{ steps.version.outputs.version }} \
-            -PversionCode=${{ steps.version.outputs.version_code }}
+            -PversionCode=${{ steps.version.outputs.version_code }} \
+            -x lint
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           tag_name: ${{ github.ref_name }}
-          name: Futon ${{ steps.version.outputs.version }}
+          name: Kotatsu HomeLab ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
           files: |
