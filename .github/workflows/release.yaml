@@ -1,4 +1,4 @@
-name: Release Build
+name: Release Build (Kamikaze Mode)
 
 on:
   push:
@@ -17,85 +17,31 @@ jobs:
       - name: Checkout App code
         uses: actions/checkout@v4
 
-      # --- INICIO DA INJEÇÃO DOS PARSERS ---
+      # --- A INJEÇÃO KAMIKAZE ---
+      # Baixamos seu arquivo .kt cru e jogamos dentro da pasta do APP (não do parser)
+      # Assim ele compila junto com a interface do usuário.
       
-      - name: Checkout Custom Parsers
-        uses: actions/checkout@v4
-        with:
-          repository: restartxx/kotatsu-parsers-redo 
-          path: kotatsu-parsers 
-          ref: master
-
-      - name: Force Local Parsers Module (KSP Fix)
+      - name: Inject Parser directly into App Source
         run: |
-          echo "🔥 Aplicando Linkagem Forçada com Correção de Variáveis KSP..."
-
-          # 1. CONFIGURAÇÃO DO SETTINGS.GRADLE
-          cat <<EOF >> settings.gradle
-
-          include ':kotatsu-parsers'
-          include ':kotatsu-parsers-ksp'
-          project(':kotatsu-parsers-ksp').projectDir = new File('kotatsu-parsers/kotatsu-parsers-ksp')
-          EOF
-
-          # 2. LINKAGEM NO APP/BUILD.GRADLE
-          perl -0777 -i -pe 's|implementation\("com\.github\.clquwu:kotatsu-parsers-redo:\$parsersVersion"\)\s*\{\s*exclude group: \x27org\.json\x27, module: \x27json\x27\s*\}|implementation project(":kotatsu-parsers")|g' app/build.gradle
+          echo "💉 Injetando código direto na veia do App..."
           
-          # ==================================================================================
-          # 3. LIMPEZA DOS ARQUIVOS DE BUILD DO PARSER
-          # ==================================================================================
+          # 1. Cria a pasta de pacote dentro do código fonte do APP
+          # Usamos um pacote que já existe (ui) ou criamos um novo
+          mkdir -p app/src/main/kotlin/org/koitharu/kotatsu/parsers/injected
           
-          # --- ARQUIVO PRINCIPAL (kotatsu-parsers/build.gradle.kts) ---
-          PARSER_BUILD="kotatsu-parsers/build.gradle.kts"
-          if [ -f "$PARSER_BUILD" ]; then
-             echo "Limpando $PARSER_BUILD..."
-             sed -i '/import tasks.ReportGenerateTask/d' $PARSER_BUILD
-             sed -i '/tasks.register<ReportGenerateTask>/d' $PARSER_BUILD
-             
-             # Plugins
-             sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' $PARSER_BUILD
-             sed -i 's|alias(libs.plugins.kotlin.serialization)|id("org.jetbrains.kotlin.plugin.serialization")|g' $PARSER_BUILD
-             sed -i 's|alias(libs.plugins.ksp)|id("com.google.devtools.ksp")|g' $PARSER_BUILD
-             
-             # Dependências
-             sed -i 's|libs.kotlinx.coroutines.core|"org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3"|g' $PARSER_BUILD
-             sed -i 's|libs.jsoup|"org.jsoup:jsoup:1.16.1"|g' $PARSER_BUILD
-             sed -i 's|libs.quickjs|"app.cash.quickjs:quickjs-jvm:0.9.2"|g' $PARSER_BUILD
-             sed -i 's|libs.json|"org.json:json:20231013"|g' $PARSER_BUILD
-             
-             # Remove testes e publicação
-             sed -i 's|testImplementation|//testImplementation|g' $PARSER_BUILD
-             sed -i 's|testRuntimeOnly|//testRuntimeOnly|g' $PARSER_BUILD
-             sed -i 's|apply(plugin = "maven-publish")|//|g' $PARSER_BUILD
-          fi
-
-          # --- ARQUIVO DO SUBMÓDULO KSP (kotatsu-parsers-ksp/build.gradle.kts) ---
-          KSP_BUILD="kotatsu-parsers/kotatsu-parsers-ksp/build.gradle.kts"
-          if [ -f "$KSP_BUILD" ]; then
-             echo "Limpando $KSP_BUILD..."
-             # Plugins
-             sed -i 's|alias(libs.plugins.kotlin.jvm)|id("org.jetbrains.kotlin.jvm")|g' $KSP_BUILD
-             
-             # --- AQUI ESTAVA O ERRO ---
-             # Substituímos especificamente a variável longa que apareceu no seu log
-             sed -i 's|libs.ksp.symbol.processing.api|"com.google.devtools.ksp:symbol-processing-api:1.9.20-1.0.14"|g' $KSP_BUILD
-             
-             # Prevenção para KotlinPoet (muito comum aparecer junto)
-             sed -i 's|libs.kotlinpoet.ksp|"com.squareup:kotlinpoet-ksp:1.14.2"|g' $KSP_BUILD
-             sed -i 's|libs.kotlinpoet|"com.squareup:kotlinpoet:1.14.2"|g' $KSP_BUILD
-             
-             # Fallback: Se tiver qualquer outro libs.ksp.* que passou batido, tenta substituir (brute force)
-             sed -i 's|libs.ksp.api|"com.google.devtools.ksp:symbol-processing-api:1.9.20-1.0.14"|g' $KSP_BUILD
-             
-             # Remove publicação e testes
-             sed -i 's|apply(plugin = "maven-publish")|//|g' $KSP_BUILD
-             
-             echo "Conteúdo final do KSP Build (Debug):"
-             cat $KSP_BUILD
-          fi
-
-          echo "--- VERIFICAÇÃO SETTINGS ---"
-          tail -n 5 settings.gradle
+          # 2. Baixa o arquivo RAW do seu repositório (ajuste o link se precisar)
+          # Estou assumindo que o arquivo HomeLabParsers.kt está na raiz ou pasta conhecida do seu repo
+          wget https://raw.githubusercontent.com/restartxx/kotatsu-parsers-redo/master/kotatsu-parsers/src/main/kotlin/org/koitharu/kotatsu/parsers/site/all/HomeLabParsers.kt -O temp_parser.kt
+          
+          # 3. CORREÇÃO DE PACOTE (Cirurgia no texto)
+          # Mudamos o 'package' do arquivo para bater com a pasta onde vamos colocar
+          sed -i 's|package .*|package org.koitharu.kotatsu.parsers.injected|' temp_parser.kt
+          
+          # 4. Move para a pasta final
+          mv temp_parser.kt app/src/main/kotlin/org/koitharu/kotatsu/parsers/injected/HomeLabParsers.kt
+          
+          echo "--- ARQUIVO INJETADO ---"
+          head -n 5 app/src/main/kotlin/org/koitharu/kotatsu/parsers/injected/HomeLabParsers.kt
 
       # --- FIM DA INJEÇÃO ---
 
@@ -108,25 +54,18 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Get version from tag
+      - name: Get version
         id: version
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "version=1.0.0-dev" >> $GITHUB_OUTPUT
-            echo "version_code=10000" >> $GITHUB_OUTPUT
-          else
             TAG=${GITHUB_REF#refs/tags/}
             VERSION=${TAG#v}
+            # Fallback para workflow_dispatch sem tag
+            if [ -z "$VERSION" ]; then VERSION="1.0.0"; fi
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION" 
-            PATCH=${PATCH:-0}
-            VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
-            echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          fi
+            echo "version_code=10000" >> $GITHUB_OUTPUT
 
       - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
+        run: echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > keystore.jks
 
       - name: Build release APK
         env:
@@ -135,25 +74,20 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          # Build normal, sem inventar moda nas dependências
           ./gradlew assembleRelease \
             -PversionName=${{ steps.version.outputs.version }} \
             -PversionCode=${{ steps.version.outputs.version_code }} \
-            -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=512m" \
             -x lint
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Kotatsu HomeLab ${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
-          files: |
-            app/build/outputs/apk/**/*.apk
+          files: app/build/outputs/apk/**/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Clean up keystore
+          
+      - name: Cleanup
         if: always()
         run: rm -f keystore.jks
